@@ -7,11 +7,13 @@
 /* Read CH32 input */
 #define CH32_Read() 0
 
-extern volatile sint15 CH11;
+extern volatile int15_t CH11;
 
-extern volatile sint15 CH12;
+extern volatile int15_t CH12;
 
-extern volatile sint15 CH14;
+extern volatile int15_t CH14;
+
+extern volatile int15_t CH33;
 
 /* Write 15 bit string to display relays */
 #define Dis_Write(x) 

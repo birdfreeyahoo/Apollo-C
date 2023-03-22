@@ -12,6 +12,6 @@ typedef enum {
 #define FLAG_SET(flag) (Flags[flag / 15] |= (1 << (flag % 15)))
 #define FLAG_GET(flag) (Flags[flag / 15] & (1 << (flag % 15)))
 
-extern sint16 Flags[6];
+extern int16_t Flags[6];
 
 #endif

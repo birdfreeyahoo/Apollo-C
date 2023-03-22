@@ -1,11 +1,14 @@
 #ifndef DEFINES_H
 #define DEFINES_H
 
-typedef unsigned short uint16;
-typedef signed short sint16;
-typedef sint16 sint15;
-typedef unsigned char uint8;
+#include <stdint.h>
+
+//typedef unsigned short uint16;
+//typedef signed short sint16;
+typedef int16_t int15_t;
+//typedef unsigned char uint8;
 typedef unsigned char bool;
+ 
 
 #define TRUE 1
 #define FALSE 0

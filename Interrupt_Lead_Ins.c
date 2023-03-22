@@ -27,7 +27,7 @@ void T6RUPT_ISR(void)
 void T5RUPT_ISR(void)
 {
     // Load timer 5 value
-    sint16 timer5 = Tmr_GetTime5();
+    int16_t timer5 = Tmr_GetTime5();
 
     if(timer5 >= TMR_HALF_SECOND)
     {

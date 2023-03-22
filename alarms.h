@@ -1,6 +1,9 @@
 #ifndef ALARMS_H
 #define ALARMS_H
 
+#define ALARM_SWITCH_WHILE_ZOPT 0116
+
+
 #define ALARM_OPT_NOT_ZEROED 0120
 
 #define ALARM_ISS_SEQ_FAIL 0207
