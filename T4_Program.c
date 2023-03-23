@@ -27,35 +27,44 @@
 
 #define PROC_JOB_PRIORITY 030000
 
-#define BIT14 020000
+#define CH32_PROC_BTN    BITMASK1(14)
 
 // Starts IMU stabilization and removes ISS Turn On Request
 #define CH12_ISS_DELAY_COMPLETE BITMASK1(15)
+#define CH12_S4B_TAKEOVER       BITMASK1(9)
 #define CH12_TVC_ENABLE         BITMASK1(8)
 #define CH12_ICDU_ERR_CNT       BITMASK1(6)
 #define CH12_ICDU_ZERO          BITMASK1(5)
 #define CH12_IMU_COARSE_ALIGN   BITMASK1(4)
+#define CH12_UNUSED             BITMASK1(3) 
 #define CH12_OCDU_ERR_CNT       BITMASK1(2)
 #define CH12_OCDU_ZERO          BITMASK1(1)
 
 
-#define CH30_TMP_IN_LIMITS      BITMASK1(15)
-#define CH30_ISS_TURN_ON_REQ    BITMASK1(14)
-#define CH30_IMU_FAIL           BITMASK1(13)
-#define CH30_IMU_CDU_FAIL       BITMASK1(12)
-#define CH30_IMU_CAGE           BITMASK1(11)
-#define CH30_PIPA_FAIL          BITMASK1(10)
-#define CH30_IMU_OPERATE        BITMASK1(9)
-#define CH30_OCDU_FAIL          BITMASK1(7)
+#define CH30_TMP_IN_LIMITS_INV      BITMASK1(15)
+#define CH30_ISS_TURN_ON_REQ_INV    BITMASK1(14)
+#define CH30_IMU_FAIL_INV           BITMASK1(13)
+#define CH30_IMU_CDU_FAIL_INV       BITMASK1(12)
+#define CH30_IMU_CAGE_INV           BITMASK1(11)
+#define CH30_PIPA_FAIL_INV          BITMASK1(10)
+#define CH30_IMU_OPERATE_INV        BITMASK1(9)
+#define CH30_OCDU_FAIL_INV          BITMASK1(7)
 
-#define CH30_IMU_MASK (CH30_TMP_IN_LIMITS      | \
-                       CH30_ISS_TURN_ON_REQ    | \
-                       CH30_IMU_FAIL           | \
-                       CH30_IMU_CDU_FAIL       | \
-                       CH30_IMU_CAGE           | \
-                       CH30_IMU_OPERATE)
+#define CH30_IMU_MASK (CH30_TMP_IN_LIMITS_INV      | \
+                       CH30_ISS_TURN_ON_REQ_INV    | \
+                       CH30_IMU_FAIL_INV           | \
+                       CH30_IMU_CDU_FAIL_INV       | \
+                       CH30_IMU_CAGE_INV           | \
+                       CH30_IMU_OPERATE_INV)
 
-
+#define MODES30_TMP_IN_LIMITS_INV           CH30_TMP_IN_LIMITS_INV
+#define MODES30_ISS_TURN_ON_REQ_INV         CH30_ISS_TURN_ON_REQ_INV
+#define MODES30_IMU_FAIL_INV                CH30_IMU_FAIL_INV
+#define MODES30_IMU_CDU_FAIL_INV            CH30_IMU_CDU_FAIL_INV
+#define MODES30_IMU_CAGE_INV                CH30_IMU_CAGE_INV
+#define MODES30_PIPA_FAIL_INV               CH30_PIPA_FAIL_INV
+#define MODES30_IMU_OPERATE_INV             CH30_IMU_OPERATE_INV
+#define MODES30_ISS_ON_FIRST_SAMPLE         BITMASK1(8)
 #define MODES30_ISS_START_WAIT              BITMASK1(7)
 #define MODES30_CAGING2                     BITMASK1(6)
 #define MODES30_CAGING1                     BITMASK1(5)
@@ -83,11 +92,18 @@
 #define CH14_GYRO_AXIS2  BITMASK1(7)
 #define CH14_GYRO_POWER  BITMASK1(6)
 
-#define CH33_CSC BITMASK1(5)
-#define CH33_4   BITMASK1(4)
+#define CH33_PIPA_FAIL      BITMASK1(13)
+#define CH33_DNL_TOO_FAST   BITMASK1(12)
+#define CH33_UPL_TOO_FAST   BITMASK1(11)
+#define CH33_CSC            BITMASK1(5)
+#define CH33_4              BITMASK1(4)
 
-#define MODES33_LAMP_TEST   BITMASK1(1)
-#define MODES33_DAP_DISABLE BITMASK1(6)
+#define MODES33_PIPA_FAIL       CH33_PIPA_FAIL
+#define MODES33_DNL_TOO_FAST    CH33_DNL_TOO_FAST
+#define MODES33_UPL_TOO_FAST    CH33_UPL_TOO_FAST
+#define MODES33_PROC_BTN        CH32_PROC_BTN
+#define MODES33_LAMP_TEST       BITMASK1(1)
+#define MODES33_DAP_DISABLE     BITMASK1(6)
 
 #define STATE_RENDEZVOUS    BITMASK1(7)
 #define STATE_IMU_USE       BITMASK1(8)
@@ -260,14 +276,14 @@ static void ProcessProceedButton(void)
     // Check if it was changed
 
     int15_t ch32 = CH32_Read();
-    int15_t changedMask = (IModes33 ^ ch32) & BIT14;
+    int15_t changedMask = (IModes33 ^ ch32) & CH32_PROC_BTN;
 
     if (changedMask != 0)
     {
         // Update IModes33 with bit 14 change
         IModes33 ^= changedMask;
 
-        int15_t proceed = IModes33 & BIT14;
+        int15_t proceed = IModes33 & CH32_PROC_BTN;
         if (proceed)
         {
             // Was on, now off, do nothing more
@@ -298,7 +314,7 @@ void CheckISSTurnOn(void)
     }
     else
     {
-        int15_t turnOnReq = !(IModes30 & CH30_ISS_TURN_ON_REQ);
+        int15_t turnOnReq = !(IModes30 & MODES30_ISS_TURN_ON_REQ_INV);
 
         if(turnOnReq)
         {
@@ -333,7 +349,7 @@ void CheckISSTurnOn(void)
 // # PROGRESS.
 void UpdateISSWarningLamp(void)
 {
-    const int15_t MODES30_ISS_LAMP_FAILS = (CH30_IMU_FAIL | CH30_IMU_CDU_FAIL | CH30_PIPA_FAIL);
+    const int15_t MODES30_ISS_LAMP_FAILS = (MODES30_IMU_FAIL_INV | MODES30_IMU_CDU_FAIL_INV | MODES30_PIPA_FAIL_INV);
 
     int15_t inhib = IModes30 & MODES30_FAIL_INHIB_MASK;
 
@@ -396,6 +412,27 @@ void OnISSZeroDelay(void)
     Waitlist_VarDelay(1024, ISSUp);
 }
 
+void ZeroISS(void)
+{
+    Imu_NoAttOff();
+
+    CH12 |= CH12_ICDU_ZERO;
+
+    Imu_ZeroICDU();
+
+    // Wait 300ms for AGS to receive signal
+    Waitlist_Waitlist(32, OnISSZeroDelay);
+}
+
+void SetIMUCageFlags(void)
+{
+    // Set flags and inhibit errors
+    IModes30 |= (MODES30_FAIL_INHIB_MASK | MODES30_CAGING1 | MODES30_CAGING2);
+
+    // Disable DAP and hold modes
+    IModes33 |= MODES33_DAP_DISABLE;
+}
+
 // # FUNCTIONAL DESCRIPTION:  THIS PROGRAM PROCESSES CHANGES OF THE IMUCAGE INBIT, CHANNEL 30 BITS 11.  IF THE BIT
 // # CHANGES TO 0 (CAGE BUTTON PRESSED), THE ISS IS CAGED (ICDU ZERO + COARSE ALIGN + NO ATT LAMP) UNTIL THE
 // # ASTRONAUT SELECTS ANOTHER PROGRAM TO ALIGN THE ISS.  ANY PULSE TRAINS TO THE ICDU'S AND GYRO'S ARE TERMINATED,
@@ -406,16 +443,9 @@ void CheckIMUCage(void)
     const int15_t CH14_OUTPUTS = (CH14_CDUX_OUTPUT | CH14_CDUY_OUTPUT | CH14_CDUZ_OUTPUT | CH14_CDUS_OUTPUT | CH14_CDUT_OUTPUT | CH14_GYRO_OUTPUT);
     const int15_t CH12_OUTPUTS = (CH12_TVC_ENABLE | CH12_ICDU_ERR_CNT | CH12_ICDU_ZERO | CH12_IMU_COARSE_ALIGN | CH12_OCDU_ERR_CNT);
 
-    if(IModes30 & CH30_IMU_CAGE)
+    if(IModes30 & MODES30_IMU_CAGE_INV)
     {
         // Was turned off, zero ISS
-        Imu_NoAttOff();
-
-        CH12 |= CH12_ICDU_ZERO;
-
-        Imu_ZeroICDU();
-
-        Waitlist_Waitlist(32, OnISSZeroDelay);
 
         // TODO: C33Test
     }
@@ -433,11 +463,7 @@ void CheckIMUCage(void)
         // Show NO ATT lamp
         DisplayBuffer[DIS_INDICATORS] |= (DIS_IND_NOATT | DISPLAY_SHOW_FLAG);
 
-        // Set flags and inhibit errors
-        IModes30 |= (MODES30_FAIL_INHIB_MASK | MODES30_CAGING1 | MODES30_CAGING2);
-
-        // Disable DAP and hold modes
-        IModes33 |= MODES33_DAP_DISABLE;
+        SetIMUCageFlags();
 
         // Clear Track, REFSMMAT and Drift flags
         Imu_Rndrefdr();
@@ -461,7 +487,7 @@ void CheckIMUCage(void)
 // # TESTED TO SEE IF ANY PROGRAM WAS USING THE ISS.  IF SO, PROGRAM ALARM 00214 IS ISSUED.
 void CheckISSOperate(void)
 {
-    if(IModes30 & CH30_IMU_OPERATE)
+    if(IModes30 & MODES30_IMU_OPERATE_INV)
     {
         // Was turned off
 
@@ -497,6 +523,235 @@ void CheckISSOperate(void)
     }
 }
 
+// Called after 90 seconds after starting ISS
+void ISSDelayComplete(void)
+{
+    int16_t oldSeqFail = IModes30 & MODES30_ISS_TURN_ON_SEQ_FAIL;
+    IModes30 &= ~MODES30_ISS_TURN_ON_SEQ_FAIL;
+
+    if(oldSeqFail)
+    {
+        if(IModes30 & MODES30_ISS_TURN_ON_REQ_INV)
+        {
+            // No turn on request after last sequence failed
+            // See if a program was waiting
+            if(State & STATE_IMU_USE)
+            {
+                // Someone waited for turn on
+                Imu_TurnOnFailed();
+
+                // TODO: Return path
+            }
+            else
+            {
+                Waitlist_TaskOver();
+            }
+        }
+        else
+        {
+            // If turn-on request now, re-enter 90 second delay
+            Waitlist_VarDelay(9000, ISSDelayComplete);
+        }
+    }
+    else
+    {
+        // Delay complete
+        CH12 |= CH12_ISS_DELAY_COMPLETE;
+        Imu_NoAttOff();
+
+        OnISSZeroDelay();
+    }
+}
+
+void ProcISSTurnOn(void)
+{
+    // After MonitorIMU processed all changes, let's see if it is time for turn-on sequence
+    if(IModes30 & MODES30_ISS_START_WAIT)
+    {
+        if(IModes30 & MODES30_ISS_ON_FIRST_SAMPLE)
+        {
+            // This is the second sample, react
+
+            // Process turn-on requests
+
+            IModes30 &= ~(MODES30_ISS_START_WAIT | MODES30_ISS_ON_FIRST_SAMPLE);
+            
+            // Inverted!
+            if(IModes30 & MODES30_ISS_TURN_ON_REQ_INV)
+            {
+                // Only operate is on
+                if(CH12 & CH12_IMU_COARSE_ALIGN)
+                {
+                    // If operate on only and we are in coarse align,
+                    // don't zero the CDUs because we might be in gimbal lock.
+                    // Use V41N20 to recover
+                
+                }
+                else
+                {
+                    // Otherwise, Zero counters unless someone else is using the IMU
+                    if(!(State & STATE_IMU_USE))
+                    {
+                        SetIMUCageFlags();
+
+                        ZeroISS();
+                    }
+                }
+            }
+            else
+            {
+                // When there is turn on request, we should also have operate on
+                if(IModes30 & MODES30_IMU_OPERATE_INV)
+                {
+                    // Turn on request but operate is off, trigger alarm
+                    Alarm_Trigger(ALARM_ISS_ON_OPERATE_OFF);
+                }
+                else
+                {
+                    // Turn on request and operate is on, cage and zero
+
+                    // Set outbits + internal flags for system turn-on or cage
+                    // Disable the error counter and remove the IMU delay comp.
+
+                    CH12 &= ~(CH12_ISS_DELAY_COMPLETE | CH12_ICDU_ERR_CNT);
+
+                    // Send zero and coarse
+                    CH12 |= CH12_ICDU_ZERO | CH12_IMU_COARSE_ALIGN;
+
+                    // Turn on no att lamp
+                    DisplayBuffer[DIS_INDICATORS] |= (DIS_IND_NOATT | DISPLAY_SHOW_FLAG);
+
+                    SetIMUCageFlags();
+
+                    // Add the 90 second delay
+                    Waitlist_Waitlist(9000, ISSDelayComplete);
+                }
+            }
+        }
+        else
+        {
+            // This is the first sample, wait for the second
+            // This gives all signals time to arrive
+            IModes30 |= MODES30_ISS_ON_FIRST_SAMPLE;
+        }
+    }
+}
+
+// # FUNCTIONAL DESCRIPTION:  THIS PROGRAM PROCESSES CHANGES OF BIT 13 OF CHANNEL 33, PIPA FAIL.  IT SETS BIT 10 OF
+// # IMODES30 TO AGREE.  IT CALLS SETISSW IN CASE A PIPA FAIL NECESSITATES AN ISS WARNING.  IF NOT, I.E., IMODES30
+// # BIT 1 = 1, AND A PIPA FAIL IS PRESENT AND THE ISS NOT BEING INITIALIZED, PROGRAM ALARM 0212 IS ISSUED.
+void CheckPipaFail(int16_t bitValue)
+{
+    // Set IModes30 Bit 10 so all ISS warning info is in one place
+    if(bitValue)
+    {
+        IModes30 |= MODES30_PIPA_FAIL_INV;
+    }
+    else
+    {
+        IModes30 &= ~MODES30_PIPA_FAIL_INV;
+    }
+
+    UpdateISSWarningLamp();
+
+    if(IModes30 & MODES30_INHIB_PIPA_FAIL)
+    {
+        if(!(IModes30 & (MODES30_PIPA_FAIL_INV |
+                         MODES30_IMU_OPERATE_INV |
+                         MODES30_ISS_START_WAIT |
+                         MODES30_ISS_ON_FIRST_SAMPLE |
+                         MODES30_CAGING1)))
+        {
+            // PIPA fail is present and the ISS is not being initialized
+            // and we cant show warning
+            Alarm_Trigger(ALARM_PIPA_FAIL);
+        }
+    }
+}
+
+void CheckDnlTooFast(int16_t bitValue)
+{
+    // Program alarm
+    if(!bitValue)
+    {
+        Alarm_Trigger(ALARM_DNL_TOO_FAST);
+    }
+}
+
+void CheckUplTooFast(int16_t bitValue)
+{
+    // Program alarm
+    if(!bitValue)
+    {
+        Alarm_Trigger(ALARM_UPL_TOO_FAST);
+    }
+}
+
+// # FUNCTIONAL DESCRIPTION:  THIS PROGRAM MONITORS THREE FLIP-FLOP INBITS OF CHANNEL 33 AND CALLS THE APPROPRIATE
+// # SUBROUTINE TO PROCESS A CHANGE.  IT IS ANALOGOUS TO IMUMON, WHICH MONITORS CHANNEL 30, EXCEPT THAT IT READS
+// # CHANNEL 33 WITH A WAND INSTRUCTION BECAUSE A `WRITE' PULSE IS REQUIRED TO RESET THE FLIP-FLOPS.  THE BITS
+// # PROCESSED AND THE SUBROUTINES CALLED ARE:
+// #	BIT	FUNCTION		SUBROUTINE
+// #	---	--------		----------
+// #	 13	PIPA FAIL		PIPFAIL
+// #	 12	DOWNLINK TOO FAST	DNTMFAST
+// #	 11	UPLINK TOO FAST		UPTMFAST
+void MonitorCh33FlipFlops(void)
+{
+    const int16_t flipFlopMask = MODES33_PIPA_FAIL | MODES33_DNL_TOO_FAST | MODES33_UPL_TOO_FAST;
+
+    int16_t oldState = IModes33 & flipFlopMask;
+    int16_t newState = CH33 & flipFlopMask;
+    int16_t changes = oldState ^ newState;
+
+    // Reset flip flops
+    CH33 &= ~flipFlopMask;
+
+    if(changes)
+    {
+        // Save changed bits
+        IModes33 ^= changes;
+
+        for(int16_t bitPos = 13; changes; bitPos--)
+        {
+            int16_t bitMask = 1 << (bitPos - 1);
+
+            if(changes & bitMask)
+            {
+                changes &= ~bitMask;
+
+                int16_t bitValue = IModes33 & bitMask;
+
+                switch(bitMask)
+                {
+                    case MODES33_PIPA_FAIL:
+                        CheckPipaFail(bitValue);
+                        break;
+
+                    case MODES33_DNL_TOO_FAST:
+                        CheckDnlTooFast(bitValue);
+                        break;
+
+                    case MODES33_UPL_TOO_FAST:
+                        CheckUplTooFast(bitValue);
+                        break;
+                }
+            }
+        }
+    }
+}
+
+// # FUNCTIONAL DESCRIPTION:  THIS PROGRAM MONITORS THE CDUZ COUNTER TO DETERMINE WHETHER THE ISS IS IN GIMBAL LOCK
+// # AND TAKES ACTION IF IT IS.  THREE REGIONS OF MIDDLE GIMBAL ANGLE (MGA) ARE USED:
+// #
+// #	1) ABS(MGA) LESS THAN OR EQUAL TO 70 DEGREES -- NORMAL MODE.
+// #	2) ABS(MGA) GREATER THAN 70 DEGREES AND LESS THAN OR EQUAL TO 85 DEGREES -- GIMBAL LOCK LAMP TURNED ON.
+// #	3) ABS(MGA) GREATER THAN 85 DEGREES -- ISS PUT IN COARSE ALIGN AND NO ATT LAMP TURNED ON.
+void GimbalLockMonitor(void)
+{
+    
+}
+
 // # FUNCTIONAL DESCRIPTION:  THIS PROGRAM IS ENTERED EVERY 480 MS.  IT DETECTS CHANGES OF THE IMU STATUS BITS IN
 // # CHANNEL 30 AND CALLS THE APPROPRIATE SUBROUTINES.  THE BITS PROCESSED AND THEIR RELEVANT SUBROUTINES ARE:
 // #
@@ -524,11 +779,11 @@ void MonitorIMU(void)
         IModes30 ^= changedMask;
 
         // Check if temp limit bit changed
-        if(changedMask & CH30_TMP_IN_LIMITS)
+        if(changedMask & CH30_TMP_IN_LIMITS_INV)
         {
             // Update temp lamp
             // bit is inverted logic
-            if(!(IModes30 & CH30_TMP_IN_LIMITS))
+            if(!(IModes30 & MODES30_TMP_IN_LIMITS_INV))
             {
                 // Temp in limits: OK
                 // Dont turn off when test active
@@ -544,7 +799,7 @@ void MonitorIMU(void)
             }
         }
 
-        int15_t remainingChanges = changedMask & ~CH30_TMP_IN_LIMITS;
+        int15_t remainingChanges = changedMask & ~CH30_TMP_IN_LIMITS_INV;
 
         for(int15_t bitPos = 14; remainingChanges; bitPos--)
         {
@@ -557,20 +812,20 @@ void MonitorIMU(void)
 
                 switch(bitMask)
                 {
-                    case CH30_ISS_TURN_ON_REQ:
+                    case CH30_ISS_TURN_ON_REQ_INV:
                         CheckISSTurnOn();
                     break;
 
-                    case CH30_IMU_FAIL:     
-                    case CH30_IMU_CDU_FAIL:
+                    case CH30_IMU_FAIL_INV:     
+                    case CH30_IMU_CDU_FAIL_INV:
                         UpdateISSWarningLamp();
                     break;
 
-                    case CH30_IMU_CAGE:
+                    case CH30_IMU_CAGE_INV:
                         CheckIMUCage();
                     break;
 
-                    case CH30_IMU_OPERATE:
+                    case CH30_IMU_OPERATE_INV:
                         CheckISSOperate();
                     break;
                 }
@@ -579,7 +834,9 @@ void MonitorIMU(void)
         }
     }
 
-    // TODO: TNONTEST
+    ProcISSTurnOn();
+    MonitorCh33FlipFlops();
+    GimbalLockMonitor();
 }
 
 int15_t GetOptCommand(int16_t cdu, int16_t desired)
@@ -771,14 +1028,14 @@ void DriveOptics(void)
             // Send command
             int15_t command = SetupCommand(commandoShaft);
             // Only send if not zero
-            if(command == S15_MINUS_ZERO) commandCounter++;
+            if(command != S15_MINUS_ZERO) commandCounter++;
             CDUSCMD_W(command);
 
             Optind--;
 
             command = SetupCommand(commandoTrunion);
             // Only send if not zero
-            if(command == S15_MINUS_ZERO) commandCounter++;
+            if(command != S15_MINUS_ZERO) commandCounter++;
             CDUTCMD_W(command);
 
             if(commandCounter > 0)
@@ -801,7 +1058,7 @@ void DriveOptics(void)
 void ProcOCDUFail(void)
 {
     // Check value of actual bit
-    if(CH30_Read() & CH30_OCDU_FAIL)
+    if(CH30_Read() & CH30_OCDU_FAIL_INV)
     {
         // Dont turn off if lamp test
         if(!(IModes33 & MODES33_LAMP_TEST))
@@ -890,7 +1147,7 @@ void MonitorOptics(void)
 {
     // Check if OCDU Fail bit changed
     int15_t ch30 = CH30_Read();
-    int15_t changes = (Optmodes ^ ch30) & CH30_OCDU_FAIL;
+    int15_t changes = (Optmodes ^ ch30) & CH30_OCDU_FAIL_INV;
     ruptreg1 = changes;
 
     if(changes)

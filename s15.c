@@ -95,14 +95,16 @@ void s15_mulDP(int15_t a, int15_t b, int15_t *result)
 
     // Get s15 sign
     int16_t sign = (i & 0x80000000) >> 17;
+    // sign-extend overflow
+    int16_t overflow = (i & 0x80000000) >> 16;
 
     // Low word:
     // Contains the lower 14 bits of the result and the sign bit
-    result[1] = (int15_t)((int16_t)(i & 0x3FFF) | sign);
+    result[1] = (int15_t)((int16_t)(i & 0x3FFF) | sign | overflow);
     
     // High word:
     // Contains the next 14 bits of the result and the sign bit
-    result[0] = (int15_t)((int16_t)(i & 0x0FFFC000) | sign);
+    result[0] = (int15_t)((int16_t)(i & 0x0FFFC000) | sign | overflow);
 }
 
 int15_t s15_ovfC(int15_t a)
