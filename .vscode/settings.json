@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "stdint.h": "c",
-        "defines.h": "c"
+        "defines.h": "c",
+        "registers.h": "c"
     }
 }

@@ -3,6 +3,10 @@
 
 #include "defines.h"
 
+#define CDUX_R() 0
+#define CDUY_R() 0
+#define CDUZ_R() 0
+
 #define CDUS_R() 0
 #define CDUT_R() 0
 
@@ -15,5 +19,7 @@
 #define CDUTCMD_W(x)
 #define CDUSCMD_W(x)
 #define GYROCMD_W(x)
+
+extern int16_t TIME4;
 
 #endif

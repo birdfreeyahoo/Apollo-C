@@ -14,16 +14,21 @@
 
 #define MAX_PULSE 165
 
-#define DISPLAY_SHOW_FLAG BITMASK1(15)
+#define DIS_UPDATE_FLAG     BITMASK1(15)
 
 #define DIS_IND_OCDU_FAIL   BITMASK1(8)
+#define DIS_IND_GLOCK       BITMASK1(6)
 #define DIS_IND_NOATT       BITMASK1(2)
 
 
 #define DISPLAY_ROW_SETTING_MASK 003777
 #define DISPLAY_HI5 076000
 
-#define T4_LOAD_VALUE 16372
+#define T4_LOADCNT(cs) (16384 - (cs))
+#define T4_MAKETIME(ms) (T4_LOADCNT((ms) / 10))
+
+#define T4_20ms     T4_MAKETIME(20)
+#define T4_120ms    T4_MAKETIME(120)
 
 #define PROC_JOB_PRIORITY 030000
 
@@ -115,7 +120,12 @@
 #define OPTMODES_OCDU_FAIL_INHIB    BITMASK1(2)
 #define OPTMODES_ZOPT_TASK_RUNNING  BITMASK1(1)
 
-static int15_t dsruptsw;
+/* ASM: DSRUPTSW */
+static uint8_t T4ActivityCntr;
+static uint8_t QuickDspCntr;
+static bool    QuickDspShow;
+
+
 static int15_t ruptreg1;
 
 static int15_t IModes30;
@@ -179,31 +189,35 @@ static const int15_t ActivityTable[8] = {
 static int15_t DisplayBuffer[DIS_SIZE];
 
 // Counter of how many updates have been requested
+// ASM: NOUT
 static int15_t DisTableRequestCnt;
 static int15_t DisCnt;
 
-// TODO: ???
-static void Hang20(void)
+// Schedules quick display updates (every 20ms)
+// ASM: HANG20
+static void ScheduleQuickDisplay(void)
 {
-    dsruptsw -= 022400;
+    QuickDspCntr = 5;
+    QuickDspShow = FALSE;
+
+    // Load 20ms
+    TIME4 = T4_20ms;
 }
 
 static void OutputNoDisplay(void)
 {
     Dis_Write(0);
-
-    // TODO: Set time
 }
 
 static bool OutputNextDisplayRow(void)
 {
     DisTableRequestCnt--;
-    uint8 firstPass = 0;
+    uint8_t firstPass = 0;
 
     while (DisCnt > 0)
     {
         int15_t display = DisplayBuffer[DisCnt];
-        if (display & DISPLAY_SHOW_FLAG)
+        if (display & DIS_UPDATE_FLAG)
         {
             DisplayBuffer[DisCnt] = ~DisplayBuffer[DisCnt];
             // Mask out row address bits
@@ -262,16 +276,15 @@ static bool OutputDisplay(void)
     return output;
 }
 
+// # THE STATUS OF THE PROCEED PUSHBUTTON IS MONITORED EVERY 120 MILLISECONDS VIA THE CHANNEL 32 BIT 14 INBIT.
+// # THE STATE OF THIS INBIT IS COMPARED WITH ITS STATE DURING THE PREVIOUS T4RUPT AND IS PROCESSED AS FOLLOWS.
+// #	IF PREV ON AND NOW ON 	-- BYPASS
+// #	IF PREV ON AND NOW OFF	-- UPDATE IMODES33
+// #	IF PREV OFF AND NOW ON	-- UPDATE IMODES33 AND PROCESS VIA PINBALL
+// #	IF PREV OFF AND NOW OFF	-- BYPASS
+// # THE LOGIC EMPLOYED REQUIRES ONLY 9 MCT (APPROX. 108 MICROSECONDS) OF COMPUTER TIME WHEN NO CHANGES OCCUR.
 static void ProcessProceedButton(void)
 {
-    // # THE STATUS OF THE PROCEED PUSHBUTTON IS MONITORED EVERY 120 MILLISECONDS VIA THE CHANNEL 32 BIT 14 INBIT.
-    // # THE STATE OF THIS INBIT IS COMPARED WITH ITS STATE DURING THE PREVIOUS T4RUPT AND IS PROCESSED AS FOLLOWS.
-    // #	IF PREV ON AND NOW ON 	-- BYPASS
-    // #	IF PREV ON AND NOW OFF	-- UPDATE IMODES33
-    // #	IF PREV OFF AND NOW ON	-- UPDATE IMODES33 AND PROCESS VIA PINBALL
-    // #	IF PREV OFF AND NOW OFF	-- BYPASS
-    // # THE LOGIC EMPLOYED REQUIRES ONLY 9 MCT (APPROX. 108 MICROSECONDS) OF COMPUTER TIME WHEN NO CHANGES OCCUR.
-
     // Bit 14 will be 0 when pressed and 1 when released
     // Check if it was changed
 
@@ -446,8 +459,9 @@ void CheckIMUCage(void)
     if(IModes30 & MODES30_IMU_CAGE_INV)
     {
         // Was turned off, zero ISS
+        ZeroISS();
 
-        // TODO: C33Test
+        // I assume jump to C33TEST here is a mistake
     }
     else
     {
@@ -461,7 +475,7 @@ void CheckIMUCage(void)
         CH11 &= ~CH11_SPS_ENGINE;
 
         // Show NO ATT lamp
-        DisplayBuffer[DIS_INDICATORS] |= (DIS_IND_NOATT | DISPLAY_SHOW_FLAG);
+        DisplayBuffer[DIS_INDICATORS] |= (DIS_IND_NOATT | DIS_UPDATE_FLAG);
 
         SetIMUCageFlags();
 
@@ -619,7 +633,7 @@ void ProcISSTurnOn(void)
                     CH12 |= CH12_ICDU_ZERO | CH12_IMU_COARSE_ALIGN;
 
                     // Turn on no att lamp
-                    DisplayBuffer[DIS_INDICATORS] |= (DIS_IND_NOATT | DISPLAY_SHOW_FLAG);
+                    DisplayBuffer[DIS_INDICATORS] |= (DIS_IND_NOATT | DIS_UPDATE_FLAG);
 
                     SetIMUCageFlags();
 
@@ -741,6 +755,11 @@ void MonitorCh33FlipFlops(void)
     }
 }
 
+// Positive range is 180°. This value corresponds to 70° then
+#define CDU_70DEG 6371
+#define CDU_15DEG 1365
+#define CDU_85DEG CDU_70DEG + CDU_15DEG
+
 // # FUNCTIONAL DESCRIPTION:  THIS PROGRAM MONITORS THE CDUZ COUNTER TO DETERMINE WHETHER THE ISS IS IN GIMBAL LOCK
 // # AND TAKES ACTION IF IT IS.  THREE REGIONS OF MIDDLE GIMBAL ANGLE (MGA) ARE USED:
 // #
@@ -749,7 +768,49 @@ void MonitorCh33FlipFlops(void)
 // #	3) ABS(MGA) GREATER THAN 85 DEGREES -- ISS PUT IN COARSE ALIGN AND NO ATT LAMP TURNED ON.
 void GimbalLockMonitor(void)
 {
-    
+    int16_t cduz = CDUZ_R();
+
+    int16_t gimbalLockLamp = 0;
+
+    // Check for gimbal lock
+
+    // DIFF: Not the original calculation with -1 due to ccs and complement misinterpretation
+    if (ABS(cduz) > CDU_70DEG)
+    {
+        if (ABS(cduz) > (CDU_85DEG))
+        {
+            // System should be in coarse align to prevent gimbal runaway
+            if (!(CH12 & CH12_IMU_COARSE_ALIGN))
+            {
+                Imu_CoarseAlign();
+
+                // Enable ISS error counter in 60 ms
+                Waitlist_Waitlist(6, Imu_ErrorCounterEnable);
+            }
+        }
+
+        gimbalLockLamp = DIS_IND_GLOCK;
+    }
+    else
+    {
+        gimbalLockLamp = 0;
+    }
+
+    // See if present state of gimbal lock lamp agrees with 
+    // desired state
+    int16_t changeLamp = (gimbalLockLamp ^ DisplayBuffer[DIS_INDICATORS]) & DIS_IND_GLOCK;
+
+    if(changeLamp)
+    {
+        // Dont turn on when IMU is caged
+        // Dont turn off when lamp test
+        if((gimbalLockLamp && !(IModes30 & MODES30_CAGING2)) ||
+           (!gimbalLockLamp && !(IModes33 & MODES33_LAMP_TEST)))
+        {
+            DisplayBuffer[DIS_INDICATORS] ^= changeLamp;
+            DisplayBuffer[DIS_INDICATORS] |= DIS_UPDATE_FLAG;
+        }
+    }
 }
 
 // # FUNCTIONAL DESCRIPTION:  THIS PROGRAM IS ENTERED EVERY 480 MS.  IT DETECTS CHANGES OF THE IMU STATUS BITS IN
@@ -771,6 +832,9 @@ void MonitorIMU(void)
 {
     // Check which bits changed
     int15_t changedMask = (IModes30 ^ CH30_Read()) & CH30_IMU_MASK;
+
+    // This could be wrong, but we replicate the original code
+    bool skipToC33 = FALSE;
 
     // If any bits changed
     if(changedMask)
@@ -801,6 +865,7 @@ void MonitorIMU(void)
 
         int15_t remainingChanges = changedMask & ~CH30_TMP_IN_LIMITS_INV;
 
+
         for(int15_t bitPos = 14; remainingChanges; bitPos--)
         {
             // Bit pos is 1-indexed
@@ -823,6 +888,11 @@ void MonitorIMU(void)
 
                     case CH30_IMU_CAGE_INV:
                         CheckIMUCage();
+                        if(IModes30 & MODES30_IMU_CAGE_INV)
+                        {
+                            // Skip to C33
+                            skipToC33 = TRUE;
+                        }
                     break;
 
                     case CH30_IMU_OPERATE_INV:
@@ -831,10 +901,16 @@ void MonitorIMU(void)
                 }
 
             }
+
+            if(skipToC33)
+            {
+                break;
+            }
         }
     }
 
-    ProcISSTurnOn();
+    if(!skipToC33)
+        ProcISSTurnOn();
     MonitorCh33FlipFlops();
     GimbalLockMonitor();
 }
@@ -906,9 +982,6 @@ static void CalculateCommands(int16_t cduS, int16_t cduT, int15_t* cmdS, int15_t
 {
     int15_t commandoShaft = GetOptCommand(cduS, DesiredOptS);
     int15_t commandoTrunion;
-
-    // Check trunion command
-    int16_t cduT = CDUT_R();
 
     // If the command is greater than 45°, we use maximum command
     /*
@@ -1065,7 +1138,7 @@ void ProcOCDUFail(void)
         {
             // Light off
             DisplayBuffer[DIS_INDICATORS] &= ~DIS_IND_OCDU_FAIL;
-            DisplayBuffer[DIS_INDICATORS] |= DISPLAY_SHOW_FLAG;
+            DisplayBuffer[DIS_INDICATORS] |= DIS_UPDATE_FLAG;
         }
     }
     else
@@ -1073,7 +1146,7 @@ void ProcOCDUFail(void)
         // Light on unless inhibited
         if(!(Optmodes & OPTMODES_OCDU_FAIL_INHIB))
         {
-            DisplayBuffer[DIS_INDICATORS] |= (DIS_IND_OCDU_FAIL | DISPLAY_SHOW_FLAG);
+            DisplayBuffer[DIS_INDICATORS] |= (DIS_IND_OCDU_FAIL | DIS_UPDATE_FLAG);
         }
     }
 }
@@ -1310,43 +1383,99 @@ void MonitorOptics(void)
     }
 }
 
+// 20ms fast interrupt to process more displays
+// this runs 5 times between the 120ms interrupts when a display was shown
+void QuickDisplayInterrupt(void)
+{
+    if (QuickDspShow)
+    {
+        bool displayOutput = FALSE;
+        if (DisTableRequestCnt > 0)
+        {
+            displayOutput = OutputNextDisplayRow();
+        }
+
+        if (!displayOutput)
+        {
+            // No display rows to output or bad return from output
+            Dis_Write(0);
+
+            // We ran out of displays to show
+            // Load counter with remaining time to 120ms
+
+            TIME4 = T4_MAKETIME(QuickDspCntr * 20);
+            QuickDspCntr = 0;
+
+        }
+        else
+        {
+            QuickDspShow = FALSE;
+
+            TIME4 = T4_20ms;
+
+            QuickDspCntr--;
+        }
+    }
+    else
+    {
+        // Wrote last time, now turn off relays
+        Dis_Write(0);
+        // Reset to send display next pass
+        QuickDspShow = TRUE;
+
+        TIME4 = T4_20ms;
+
+        QuickDspCntr--;
+    }
+}
+
 void T4_Program(void)
 {
-    if(dsruptsw == 0)
+    if(QuickDspCntr > 0)
     {
-        dsruptsw = 7;
+        // Process more displays
+        QuickDisplayInterrupt();
     }
-    if(dsruptsw >= 0)
+    else
     {
-        dsruptsw--;
+        if (T4ActivityCntr == 0)
+        {
+            T4ActivityCntr = 7;
+        }
+
+        T4ActivityCntr--;
 
         // Per-second activity executed now
-        int15_t activityIndex = dsruptsw;
+        int15_t activityIndex = T4ActivityCntr;
         
-        if(DisplayBuffer[DIS_INDICATORS] & DISPLAY_SHOW_FLAG)
+        if(DisplayBuffer[DIS_INDICATORS] & DIS_UPDATE_FLAG)
         {
             // Show indicators
             DisplayBuffer[DIS_INDICATORS] &= DISPLAY_ROW_SETTING_MASK;
             Dis_Write(DisplayBuffer[DIS_INDICATORS] + DisplayRowTable[DIS_INDICATORS]);
 
-            Hang20();
+            ScheduleQuickDisplay();
         }
         else
         {
             // Output all display rows that have been requested
             if(OutputDisplay())
             {
-                Hang20();
+                ScheduleQuickDisplay();
             }
             else
             {
                 OutputNoDisplay();
+                // Load 120ms
+                TIME4 = T4_120ms;
 
-                // TODO : Set time
+                // When no display is output, we have a regular 120ms interrupt.
+                // With 8 activities, this leads to 960ms periods, like stated in assembler.
+                // Correct output of a display leads to a 20ms interrupt, which results in QUIKDSP
+                // path being taken. This path also uses 20ms interrupts. So it can only be executed 
+                // five times in a row, before an activity needs to be executed.
             }
         }
-
-        // TODO: Set time
 
         ProcessProceedButton();
         
@@ -1370,9 +1499,5 @@ void T4_Program(void)
                 // Nothing, leave interrupt
             break;
         }
-    }
-    else
-    {
-        // GOTO QUIKDSP
     }
 }

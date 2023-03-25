@@ -7,6 +7,6 @@
 typedef void (*JobFunction)(void);
 
 /* Queues new job request which does not need VAC area */
-void Exec_JobRequest_Novac(JobFunction job, int15_t priority);
+void Exec_JobRequest_Novac(JobFunction job, int15_t priority) {}
 
 #endif

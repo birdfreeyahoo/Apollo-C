@@ -18,8 +18,8 @@ int15_t s15(int16_t i)
 
 int15_t s15_u(uint16_t i)
 {
-    // Extend bit 15 to bit 16 as overflow bit
-    i = ((i & 0x4000) << 1) | (i & 0x7FFF);
+    // Delete bits 15 and 16
+    return (int15_t)(i & 0x3FFF);
 }
 
 int16_t s16(int15_t i)
@@ -80,7 +80,7 @@ void s15_mulDP(int15_t a, int15_t b, int15_t *result)
     int16_t b16 = s16(b);
 
     // Check for -0
-    if(((a == S15_MINUS_ZERO) && (b16 > 0)) || (a == 0) && (b16 < 0))
+    if(((a == S15_MINUS_ZERO) && (b16 > 0)) || ((a == 0) && (b16 < 0)))
     {
         result[0] = S15_MINUS_ZERO;
         result[1] = S15_MINUS_ZERO;

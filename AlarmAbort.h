@@ -3,6 +3,6 @@
 
 #include "defines.h"
 
-void Alarm_Trigger(int15_t alarmCode);
+void Alarm_Trigger(int15_t alarmCode) {}
 
 #endif
